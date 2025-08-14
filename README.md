@@ -1,4 +1,4 @@
-# HDM-ext: official ComfyUI model loader for HDM-xut models
+# [WIP] HDM-ext: official ComfyUI model loader for HDM-xut models
 
 ![1755075184399](image/README/1755075184399.png)
 
