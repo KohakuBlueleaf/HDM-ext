@@ -29,7 +29,6 @@ class TBackBone(nn.Module):
         use_dyt=False,
     ):
         super().__init__()
-        assert not use_dyt, "use_dyt is not supported yet"
         self.blocks = nn.ModuleList(
             [
                 TransformerBlock(
@@ -118,7 +117,6 @@ class XUTBackBone(nn.Module):
         use_dyt=False,
     ):
         super().__init__()
-        assert not use_dyt, "use_dyt is not supported yet"
         if isiterable(enc_blocks):
             enc_blocks = list(enc_blocks)
             assert len(enc_blocks) == depth
@@ -413,7 +411,17 @@ class XUDiT(nn.Module):
             self.prev_tread_trns.grad_ckpt = grad_ckpt
             self.post_tread_trns.grad_ckpt = grad_ckpt
 
-    def forward(self, x, t, ctx=None, pos_map=None, r=None, addon_info=None, return_enc_out=False):
+    def forward(
+        self,
+        x,
+        t,
+        ctx=None,
+        pos_map=None,
+        r=None,
+        addon_info=None,
+        tread_rate=None,
+        return_enc_out=False,
+    ):
         n, c, h, w = x.size()
         t = t.reshape(n, -1)
         x, pos_map = self.in_patch(x, pos_map)
@@ -437,8 +445,8 @@ class XUDiT(nn.Module):
                 ctx = ctx[:, None]
             t_emb = t_emb + self.class_token(ctx)
             ctx = None
-        if addon_info is not None and hasattr(self, "addon_info_embs_proj"):
-            if addon_info.ndim ==1:
+        if addon_info is not None:
+            if addon_info.ndim == 1:
                 # [B] -> [B, 1] for single value info
                 addon_info = addon_info[:, None]
             # [B, D] -> [B, 1, D] for t_emb shape
@@ -478,19 +486,25 @@ class XUDiT(nn.Module):
                 y=t_emb,
                 shared_adaln=shared_adaln_state,
             )
-            if self.training:
-                xt_selection_length = selection_length = int(length * self.dropout_ratio)
-                selection = torch.stack([
-                    torch.randperm(length, device=x.device) < selection_length
-                    for _ in range(n)
-                ])
+            if self.training or tread_rate is not None:
+                xt_selection_length = selection_length = length - int(
+                    length * (tread_rate or self.dropout_ratio)
+                )
+                selection = torch.stack(
+                    [
+                        torch.randperm(length, device=x.device) < selection_length
+                        for _ in range(n)
+                    ]
+                )
                 if self.ctx_proj is not None:
                     ctx_length = x.size(1) - length
                     selection = torch.concat(
                         [
-                            selection, 
-                            torch.ones(n, ctx_length, device=x.device, dtype=torch.bool)
-                        ], 
+                            selection,
+                            torch.ones(
+                                n, ctx_length, device=x.device, dtype=torch.bool
+                            ),
+                        ],
                         dim=1,
                     )
                     selection_length += ctx_length
@@ -511,8 +525,10 @@ class XUDiT(nn.Module):
         if return_enc_out:
             backbone_out, enc_out = backbone_out
         if self.use_tread:
-            if self.training:
-                out = torch.empty(n, full_length, x.size(2), device=x.device, dtype=x.dtype)
+            if self.training or tread_rate is not None:
+                out = torch.empty(
+                    n, full_length, x.size(2), device=x.device, dtype=x.dtype
+                )
                 out[~selection, :] = not_masked_part
                 out[selection, :] = backbone_out.flatten(0, 1)
                 pos_map = raw_pos_map
@@ -531,6 +547,8 @@ class XUDiT(nn.Module):
         out = self.out_patch(out, h, w)
 
         if return_enc_out:
-            length = xt_selection_length if self.use_tread and self.training else full_length
+            length = (
+                xt_selection_length if self.use_tread and self.training else full_length
+            )
             return out, enc_out[:, :length]
         return out

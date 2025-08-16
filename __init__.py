@@ -6,13 +6,20 @@ from contextlib import contextmanager
 # Model dep
 import torch
 
+try:
+    import triton
+
+    use_triton = True
+except ImportError:
+    use_triton = False
+
 ## XUT is the custom arch used in HDM
 from .xut import env
 
-env.TORCH_COMPILE = False
+env.TORCH_COMPILE = use_triton
 env.USE_LIGER = False
-env.USE_XFORMERS = False
-env.USE_XFORMERS_LAYERS = False
+env.USE_XFORMERS = True
+env.USE_XFORMERS_LAYERS = True
 from .xut.xut import XUDiT
 from .xut.modules.axial_rope import make_axial_pos_no_cache
 from transformers import Qwen3Model, Qwen2Tokenizer
@@ -277,6 +284,7 @@ class HDMWrapper(XUDiT):
         x_shift=None,
         y_shift=None,
         zoom=None,
+        tread_gamma=None,
         *args,
         **kwargs,
     ):
@@ -302,12 +310,16 @@ class HDMWrapper(XUDiT):
         else:
             pos_map = None
 
+        tread_gamma = tread_gamma[0].item() if tread_gamma is not None else None
+        tread_gamma = tread_gamma or None
+
         return super().forward(
             x.to(self.dtype),
             timesteps.to(self.dtype),
             context,
             pos_map=pos_map,
             addon_info=aspect_ratio_info,
+            tread_rate=tread_gamma,
         )
 
 
@@ -329,6 +341,11 @@ class HDMSmall(BaseModel):
             base_result["x_shift"] = comfy.conds.CONDRegular(x_shift)
             base_result["y_shift"] = comfy.conds.CONDRegular(y_shift)
             base_result["zoom"] = comfy.conds.CONDRegular(zoom)
+        if "tread_gamma" in kwargs:
+            tread_gamma = torch.tensor(
+                [kwargs["tread_gamma"]], dtype=torch.float32, device=self.device
+            )
+            base_result["tread_gamma"] = comfy.conds.CONDRegular(tread_gamma)
         return base_result
 
 
@@ -567,9 +584,47 @@ class HDMCameraParam:
         return positive, negative
 
 
+class HDMTreadGamma:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
+                "positive_gamma": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "negative_gamma": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
+    OUTPUT_TOOLTIPS = ""
+    FUNCTION = "apply"
+
+    CATEGORY = "conditioning/hdm"
+    DESCRIPTION = "Apply tread gamma to conditioning"
+
+    def apply(self, positive, negative, positive_gamma, negative_gamma):
+        for pos in positive:
+            pos[1]["tread_gamma"] = positive_gamma
+        for neg in negative:
+            pos[1]["tread_gamma"] = negative_gamma
+        return positive, negative
+
+
 NODE_CLASS_MAPPINGS = {
     "HDMLoader": HDMCheckpointLoader,
     "HDMCameraParam": HDMCameraParam,
+    "HDMTreadGamma": HDMTreadGamma,
 }
 
-NODE_DISPLAY_NAME_MAPPINGS = {"HDMLoader": "HDM Loader", "HDMCameraParam": "HDM Camera"}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "HDMLoader": "HDM Loader",
+    "HDMCameraParam": "HDM Camera",
+    "HDMTreadGamma": "HDM Tread Gamma",
+}
