@@ -11,5 +11,5 @@ Repository = "https://github.com/KohakuBlueleaf/HDM-ext"
 
 [tool.comfy]
 PublisherId = "kblueleaf"
-DisplayName = "hdm-ext"
-Icon = ""
+DisplayName = "HDM"
+Icon = "https://i.meee.com.tw/4jcxbRr.jpeg"
