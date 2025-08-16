@@ -1,0 +1,783 @@
+{
+  "id": "113c3207-33a0-4d88-aace-447ad3e7c822",
+  "revision": 0,
+  "last_node_id": 20,
+  "last_link_id": 29,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "EmptyLatentImage",
+      "pos": [
+        460,
+        -20
+      ],
+      "size": [
+        240,
+        110
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 1
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "label": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            22
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyLatentImage"
+      },
+      "widgets_values": [
+        1344,
+        896,
+        1
+      ]
+    },
+    {
+      "id": 6,
+      "type": "SaveImage",
+      "pos": [
+        810,
+        280
+      ],
+      "size": [
+        1220,
+        590
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "outputs": [],
+      "title": "TIPO Generated Prompt",
+      "properties": {},
+      "widgets_values": [
+        "HDM/ComfyUI"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "PrimitiveInt",
+      "pos": [
+        70,
+        -20
+      ],
+      "size": [
+        380,
+        82
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "title": "Width",
+      "properties": {
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        1024,
+        "fixed"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "HDMLoader",
+      "pos": [
+        710,
+        -20
+      ],
+      "size": [
+        480,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            19
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            4,
+            6
+          ]
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HDMLoader"
+      },
+      "widgets_values": [
+        "hdm-xut-340M-1024px-note.safetensors"
+      ]
+    },
+    {
+      "id": 15,
+      "type": "PrimitiveInt",
+      "pos": [
+        70,
+        100
+      ],
+      "size": [
+        380,
+        82
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "title": "Height",
+      "properties": {
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        2048,
+        "fixed"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "HDMCameraParam",
+      "pos": [
+        1470,
+        -20
+      ],
+      "size": [
+        250,
+        140
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 11
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            26
+          ]
+        },
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            27
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HDMCameraParam"
+      },
+      "widgets_values": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": 9,
+      "type": "PrimitiveNode",
+      "pos": [
+        70,
+        670
+      ],
+      "size": [
+        730,
+        140
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "slot_index": 0,
+          "links": [
+            7
+          ]
+        }
+      ],
+      "title": "Negative Prompt",
+      "properties": {
+        "Run widget replace on values": false
+      },
+      "widgets_values": [
+        "low quality, worst quality, text, signature, jpeg artifacts, bad anatomy, old, early, copyright name, watermark, artist name, signature, weibo username, mosaic censoring, bar censor, censored, text, speech bubbles, realistic, jacket, open jacket"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "KSampler",
+      "pos": [
+        1730,
+        -20
+      ],
+      "size": [
+        340,
+        262
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 19
+        },
+        {
+          "label": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 28
+        },
+        {
+          "label": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 29
+        },
+        {
+          "label": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 22
+        },
+        {
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "label": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "slot_index": 0,
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        676063683002407,
+        "randomize",
+        32,
+        5,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 17,
+      "type": "PrimitiveNode",
+      "pos": [
+        70,
+        260
+      ],
+      "size": [
+        730,
+        370
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "slot_index": 0,
+          "links": [
+            25
+          ]
+        }
+      ],
+      "title": "Prompt",
+      "properties": {
+        "Run widget replace on values": false
+      },
+      "widgets_values": [
+        "1girl, \nmejiro ardan \\(umamusume\\), umamusume, \nningen mame, \n\nsolo, horse ears, animal ears, horse girl, tail, long hair, horse tail, blue hair, purple eyes, full body, white background, simple background, looking at viewer, braid, shirt, black footwear, white shirt, open mouth, breasts, smile, long sleeves, crown braid, waving, boots, toes, standing, blush, long shirt, t-shirt, bra strap, neon lighting hair,\n\nmasterpiece, newest, safe, absurdres"
+      ]
+    },
+    {
+      "id": 8,
+      "type": "PrimitiveNode",
+      "pos": [
+        460,
+        130
+      ],
+      "size": [
+        240,
+        90
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "slot_index": 0,
+          "links": [
+            23
+          ]
+        }
+      ],
+      "title": "Seed",
+      "properties": {
+        "Run widget replace on values": false
+      },
+      "widgets_values": [
+        676063683002407,
+        "increment"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "CLIPTextEncode",
+      "pos": [
+        710,
+        130
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 4
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 25
+        }
+      ],
+      "outputs": [
+        {
+          "label": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            11
+          ]
+        }
+      ],
+      "title": "Positive CLIP",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "1girl, \nmejiro ardan \\(umamusume\\), umamusume, \nningen mame, \n\nsolo, horse ears, animal ears, horse girl, tail, long hair, horse tail, blue hair, purple eyes, full body, white background, simple background, looking at viewer, braid, shirt, black footwear, white shirt, open mouth, breasts, smile, long sleeves, crown braid, waving, boots, toes, standing, blush, long shirt, t-shirt, bra strap, neon lighting hair,\n\nmasterpiece, newest, safe, absurdres"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "CLIPTextEncode",
+      "pos": [
+        980,
+        130
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 6
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "label": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            12
+          ]
+        }
+      ],
+      "title": "Negative CLIP",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "low quality, worst quality, text, signature, jpeg artifacts, bad anatomy, old, early, copyright name, watermark, artist name, signature, weibo username, mosaic censoring, bar censor, censored, text, speech bubbles, realistic, jacket, open jacket"
+      ]
+    },
+    {
+      "id": 20,
+      "type": "HDMTreadGamma",
+      "pos": [
+        1200,
+        -20
+      ],
+      "size": [
+        240,
+        110
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 26
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 27
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            28
+          ]
+        },
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HDMTreadGamma"
+      },
+      "widgets_values": [
+        0,
+        0.15
+      ]
+    },
+    {
+      "id": 7,
+      "type": "VAEDecode",
+      "pos": [
+        1580,
+        180
+      ],
+      "size": [
+        140,
+        50
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 9
+        },
+        {
+          "label": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "label": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      1,
+      12,
+      0,
+      1,
+      0,
+      "INT"
+    ],
+    [
+      2,
+      15,
+      0,
+      1,
+      1,
+      "INT"
+    ],
+    [
+      4,
+      11,
+      1,
+      4,
+      0,
+      "CLIP"
+    ],
+    [
+      6,
+      11,
+      1,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      7,
+      9,
+      0,
+      5,
+      1,
+      "STRING"
+    ],
+    [
+      8,
+      7,
+      0,
+      6,
+      0,
+      "IMAGE"
+    ],
+    [
+      9,
+      14,
+      0,
+      7,
+      0,
+      "LATENT"
+    ],
+    [
+      10,
+      11,
+      2,
+      7,
+      1,
+      "VAE"
+    ],
+    [
+      11,
+      4,
+      0,
+      10,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      12,
+      5,
+      0,
+      10,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      19,
+      11,
+      0,
+      14,
+      0,
+      "MODEL"
+    ],
+    [
+      22,
+      1,
+      0,
+      14,
+      3,
+      "LATENT"
+    ],
+    [
+      23,
+      8,
+      0,
+      14,
+      4,
+      "INT"
+    ],
+    [
+      25,
+      17,
+      0,
+      4,
+      1,
+      "STRING"
+    ],
+    [
+      26,
+      10,
+      0,
+      20,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      27,
+      10,
+      1,
+      20,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      28,
+      20,
+      0,
+      14,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      29,
+      20,
+      1,
+      14,
+      2,
+      "CONDITIONING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.9090909090909091,
+      "offset": [
+        -65.15490769684988,
+        54.44575311390314
+      ]
+    },
+    "frontendVersion": "1.26.2"
+  },
+  "version": 0.4
+}
