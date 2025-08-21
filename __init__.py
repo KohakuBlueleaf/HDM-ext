@@ -129,6 +129,7 @@ class Qwen3_600M_Wrapper(Qwen3Model):
         intermediate_output=None,
         final_layer_norm_intermediate=True,
         dtype=None,
+        **kwargs
     ):
         # We use Autocast here to resolve dtype issue easily
         # In theory you may want to manually set dtype instead of autocast for performance
