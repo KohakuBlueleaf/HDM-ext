@@ -15,10 +15,11 @@ except ImportError:
 
 ## XUT is the custom arch used in HDM
 from .xut import env
+from comfy.cli_args import args
 
-env.TORCH_COMPILE = use_triton
+env.TORCH_COMPILE = use_triton and not args.cpu
 env.USE_LIGER = False
-env.USE_XFORMERS = True
+env.USE_XFORMERS = False
 env.USE_XFORMERS_LAYERS = True
 from .xut.xut import XUDiT
 from .xut.modules.axial_rope import make_axial_pos_no_cache
@@ -129,7 +130,7 @@ class Qwen3_600M_Wrapper(Qwen3Model):
         intermediate_output=None,
         final_layer_norm_intermediate=True,
         dtype=None,
-        **kwargs
+        **kwargs,
     ):
         # We use Autocast here to resolve dtype issue easily
         # In theory you may want to manually set dtype instead of autocast for performance
@@ -229,12 +230,14 @@ class HDMWrapper(XUDiT):
         mlp_dim=3072,
         depth=4,
         enc_blocks=1,
+        mid_blocks=0,
         dec_blocks=3,
         dec_ctx=False,
         class_cond=0,
         shared_adaln=True,
         concat_ctx=True,
         use_dyt=False,
+        self_ctx_mode="xut",
         double_t=False,
         addon_info_embs_dim=1,
         tread_config={
@@ -259,12 +262,14 @@ class HDMWrapper(XUDiT):
                 mlp_dim=mlp_dim,
                 depth=depth,
                 enc_blocks=enc_blocks,
+                mid_blocks=mid_blocks,
                 dec_blocks=dec_blocks,
                 dec_ctx=dec_ctx,
                 class_cond=class_cond,
                 shared_adaln=shared_adaln,
                 concat_ctx=concat_ctx,
                 use_dyt=use_dyt,
+                self_ctx_mode=self_ctx_mode,
                 double_t=double_t,
                 addon_info_embs_dim=addon_info_embs_dim,
                 tread_config=tread_config,
@@ -317,7 +322,7 @@ class HDMWrapper(XUDiT):
         return super().forward(
             x.to(self.dtype),
             timesteps.to(self.dtype),
-            context,
+            context.to(self.dtype),
             pos_map=pos_map,
             addon_info=aspect_ratio_info,
             tread_rate=tread_gamma,
@@ -325,7 +330,8 @@ class HDMWrapper(XUDiT):
 
 
 class HDMSmall(BaseModel):
-    def __init__(self, model_config, model_type=ModelType.FLOW, device=None):
+    def __init__(self, model_config, model_type=ModelType.FLOW, device=None, **kwargs):
+        model_config.unet_config.update(kwargs)
         super().__init__(model_config, model_type, device=device, unet_model=HDMWrapper)
 
     def extra_conds(self, **kwargs):
@@ -379,7 +385,12 @@ class HomeDiffusionSmall(BASE):
             ] + self.supported_inference_dtypes
 
     def get_model(self, state_dict, prefix="", device=None):
-        out = HDMSmall(self, device=device)
+        max_num_mid_blocks = 0
+        for key in list(state_dict.keys()):
+            if "mid_blocks." in key:
+                number = int(key.split("mid_blocks.")[1].split(".")[0]) + 1
+                max_num_mid_blocks = max(max_num_mid_blocks, number)
+        out = HDMSmall(self, mid_blocks=max_num_mid_blocks, device=device)
         return out
 
     def clip_target(self, state_dict={}):
@@ -614,7 +625,7 @@ class HDMTreadGamma:
         for pos in positive:
             pos[1]["tread_gamma"] = positive_gamma
         for neg in negative:
-            pos[1]["tread_gamma"] = negative_gamma
+            neg[1]["tread_gamma"] = negative_gamma
         return positive, negative
 
 
