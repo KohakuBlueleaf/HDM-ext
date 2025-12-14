@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 from .layers import SwiGLU
@@ -18,17 +19,41 @@ class TransformerBlock(nn.Module):
         use_adaln=False,
         use_shared_adaln=False,
         ctx_from_self=False,
+        self_ctx_mode="xut",
         norm_layer=RMSNorm,
     ):
         super().__init__()
         self.use_adaln = use_adaln
         self.attn = SelfAttention(dim, heads, dim_head, pos_dim)
-        if ctx_dim is None:
-            self.xattn_pre_norm = None
-            self.xattn = None
-        else:
+        self.alpha = self.xattn = self.xattn_pre_norm = self.mixer = self.ctx_proj = (
+            None
+        )
+        self.ctx_from_self = ctx_from_self
+        self.self_ctx_mode = self_ctx_mode
+        if ctx_dim is not None:
             self.ctx_from_self = ctx_from_self
-            self.xattn = CrossAttention(dim, ctx_dim, heads, dim_head, pos_dim)
+            if not ctx_from_self or self_ctx_mode == "xut":
+                print("XUT self-ctx mode")
+                # XUT self-ctx mode or simple xattn
+                self.xattn = CrossAttention(dim, ctx_dim, heads, dim_head, pos_dim)
+            elif self_ctx_mode == "concat-linear":
+                print("Concat linear self-ctx mode")
+                self.mixer = nn.Linear(ctx_dim + dim, dim)
+            elif self_ctx_mode in {"addition", "interpolation"}:
+                if ctx_dim != dim:
+                    self.ctx_proj = nn.Linear(ctx_dim, dim)
+                else:
+                    self.ctx_proj = nn.Identity()
+                if self_ctx_mode == "interpolation":
+                    print("Interpolation self-ctx mode")
+                    self.alpha = nn.Parameter(torch.zeros(1))
+                else:
+                    print("Addition self-ctx mode")
+                    self.alpha = None
+            elif self_ctx_mode == "ignore":
+                pass
+            else:
+                raise NotImplementedError(f"Unknown self_ctx_mode: {self_ctx_mode}")
         self.mlp = SwiGLU(dim, mlp_dim, dim)
 
         if self.use_adaln:
@@ -59,6 +84,15 @@ class TransformerBlock(nn.Module):
         ctx_mask=None,
         shared_adaln=None,
     ):
+        if self.mixer is not None:
+            x = self.mixer(torch.cat([x, ctx], dim=-1))
+        if self.ctx_proj is not None:
+            ctx = self.ctx_proj(ctx)
+            if self.alpha is None:
+                x = x + ctx
+            else:
+                x = torch.lerp(x, ctx, self.alpha.to(x))
+
         y = [y] if y is not None else []
         y = y if shared_adaln is None else [y[0], shared_adaln[0]]
         x, gate = self.attn_pre_norm(x, *y)

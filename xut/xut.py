@@ -27,13 +27,18 @@ class TBackBone(nn.Module):
         use_adaln=False,
         use_shared_adaln=False,
         use_dyt=False,
+        ctx_from_self=False,
     ):
         super().__init__()
         self.blocks = nn.ModuleList(
             [
                 TransformerBlock(
                     dim,
-                    ctx_dim,
+                    (
+                        ctx_dim
+                        if (ctx_from_self and idx == 0) or not ctx_from_self
+                        else None
+                    ),
                     heads,
                     dim_head,
                     mlp_dim,
@@ -41,10 +46,12 @@ class TBackBone(nn.Module):
                     use_adaln,
                     use_shared_adaln,
                     norm_layer=RMSNorm,
+                    ctx_from_self=ctx_from_self,
                 )
-                for _ in range(depth)
+                for idx in range(depth)
             ]
         )
+        self.ctx_from_self = ctx_from_self
         self.grad_ckpt = False
 
     def init_weight(self):
@@ -91,6 +98,8 @@ class TBackBone(nn.Module):
                 )
             else:
                 x = block(x, ctx, pos_map, None, y, x_mask, ctx_mask, shared_adaln)
+            if self.ctx_from_self:
+                ctx = None
 
         return x
 
@@ -110,11 +119,13 @@ class XUTBackBone(nn.Module):
         pos_dim=2,
         depth=8,
         enc_blocks=1,
+        mid_blocks=0,
         dec_blocks=2,
         dec_ctx=False,
         use_adaln=False,
         use_shared_adaln=False,
         use_dyt=False,
+        self_ctx_mode="xut",
     ):
         super().__init__()
         if isiterable(enc_blocks):
@@ -146,6 +157,22 @@ class XUTBackBone(nn.Module):
             ]
             self.enc_blocks.append(nn.ModuleList(blocks))
 
+        self.mid_blocks = nn.ModuleList()
+        for i in range(mid_blocks):
+            self.mid_blocks.append(
+                TransformerBlock(
+                    dim,
+                    ctx_dim,
+                    heads,
+                    dim_head,
+                    mlp_dim,
+                    pos_dim,
+                    use_adaln,
+                    use_shared_adaln,
+                    norm_layer=RMSNorm,
+                )
+            )
+
         self.dec_ctx = dec_ctx
         self.dec_blocks = nn.ModuleList()
         for i in range(depth):
@@ -160,6 +187,7 @@ class XUTBackBone(nn.Module):
                     use_adaln,
                     use_shared_adaln,
                     ctx_from_self=bid == 0,
+                    self_ctx_mode=self_ctx_mode,
                     norm_layer=RMSNorm,
                 )
                 for bid in range(dec_blocks[i])
@@ -218,51 +246,26 @@ class XUTBackBone(nn.Module):
             self_ctx.append(x)
         enc_out = x
 
+        for block in self.mid_blocks:
+            x = block(x, ctx, pos_map, None, y, x_mask, ctx_mask, shared_adaln)
+
         for blocks in self.dec_blocks:
             first_block = blocks[0]
-            if self.grad_ckpt:
-                x = checkpoint(
-                    first_block,
+            x = first_block(
+                x, self_ctx[-1], pos_map, pos_map, y, x_mask, ctx_mask, shared_adaln
+            )
+
+            for block in blocks[1:]:
+                x = block(
                     x,
-                    self_ctx[-1],
+                    ctx if self.dec_ctx else None,
                     pos_map,
-                    pos_map,
+                    None,
                     y,
                     x_mask,
                     ctx_mask,
                     shared_adaln,
-                    use_reentrant=False,
                 )
-            else:
-                x = first_block(
-                    x, self_ctx[-1], pos_map, pos_map, y, x_mask, ctx_mask, shared_adaln
-                )
-
-            for block in blocks[1:]:
-                if self.grad_ckpt:
-                    x = checkpoint(
-                        block,
-                        x,
-                        ctx if self.dec_ctx else None,
-                        pos_map,
-                        None,
-                        y,
-                        x_mask,
-                        ctx_mask,
-                        shared_adaln,
-                        use_reentrant=False,
-                    )
-                else:
-                    x = block(
-                        x,
-                        ctx if self.dec_ctx else None,
-                        pos_map,
-                        None,
-                        y,
-                        x_mask,
-                        ctx_mask,
-                        shared_adaln,
-                    )
 
         if return_enc_out:
             return x, enc_out
@@ -284,19 +287,27 @@ class XUDiT(nn.Module):
         heads=16,
         dim_head=64,
         mlp_dim=3072,
-        depth=8,
+        depth=4,
         enc_blocks=1,
-        dec_blocks=2,
+        mid_blocks=0,
+        dec_blocks=3,
         dec_ctx=False,
         class_cond=0,
         shared_adaln=True,
         concat_ctx=True,
         use_dyt=False,
+        self_ctx_mode="xut",
         double_t=False,
-        addon_info_embs_dim=None,
-        tread_config=None,
+        addon_info_embs_dim=1,
+        tread_config={
+            "prev_trns_depth": 1,
+            "post_trns_depth": 3,
+            "dropout_ratio": 0.5,
+        },
+        pixel_model_config=None,
     ):
         super().__init__()
+        self.dim = dim
         self.backbone = XUTBackBone(
             dim,
             None if concat_ctx else ctx_dim,
@@ -306,11 +317,13 @@ class XUDiT(nn.Module):
             2,
             depth,
             enc_blocks,
+            mid_blocks,
             dec_blocks,
             use_adaln=True,
             use_shared_adaln=shared_adaln,
             dec_ctx=dec_ctx,
             use_dyt=use_dyt,
+            self_ctx_mode=self_ctx_mode,
         )
 
         self.use_tread = False
@@ -388,6 +401,16 @@ class XUDiT(nn.Module):
             nn.init.constant_(self.addon_info_embs_proj[-1].bias, 0)
             nn.init.constant_(self.addon_info_embs_proj[-1].weight, 0)
 
+        if pixel_model_config is not None:
+            self.use_pixel_mode = True
+            patch_size = pixel_model_config["patch_size"]
+            input_dim = pixel_model_config["input_dim"]
+            self.pixel_patch = PatchEmbed(patch_size, input_dim, dim)
+            self.pixel_unpatch = UnPatch(patch_size, dim, input_dim)
+            self.patch_size = patch_size
+        else:
+            self.use_pixel_mode = False
+
         self.concat_ctx = concat_ctx
         self.shared_adaln = shared_adaln
         self.need_ctx = ctx_dim is not None
@@ -401,7 +424,7 @@ class XUDiT(nn.Module):
             nn.init.normal_(
                 self.out_patch.proj.weight,
                 mean=0.0,
-                std=1 / self.out_patch.proj.in_features**2,
+                std=1 / self.out_patch.proj.in_features,
             )
 
     def set_grad_ckpt(self, grad_ckpt):
@@ -411,32 +434,100 @@ class XUDiT(nn.Module):
             self.prev_tread_trns.grad_ckpt = grad_ckpt
             self.post_tread_trns.grad_ckpt = grad_ckpt
 
-    def forward(
+    def backbone_forward(
+        self,
+        x,
+        t_emb,
+        length,
+        shared_adaln_state,
+        ctx=None,
+        pos_map=None,
+        tread_rate=None,
+    ):
+        n = x.size(0)
+        if self.use_tread:
+            x = self.prev_tread_trns(
+                x,
+                ctx=ctx,
+                pos_map=pos_map,
+                y=t_emb,
+                shared_adaln=shared_adaln_state,
+            )
+            if self.training or tread_rate is not None:
+                xt_selection_length = selection_length = int(
+                    length
+                    * (
+                        1 - (tread_rate or self.dropout_ratio)
+                    )  # higher rate = more dropout = less selection
+                )
+                selection = torch.stack(
+                    [
+                        torch.randperm(length, device=x.device) < selection_length
+                        for _ in range(n)
+                    ]
+                )
+                xt_selection_length = min(xt_selection_length, length)
+                selection_length = min(selection_length, length)
+                if self.ctx_proj is not None:
+                    ctx_length = x.size(1) - length
+                    selection = torch.concat(
+                        [
+                            selection,
+                            torch.ones(
+                                n, ctx_length, device=x.device, dtype=torch.bool
+                            ),
+                        ],
+                        dim=1,
+                    )
+                    selection_length += ctx_length
+                full_length = x.size(1)
+                not_masked_part = x[~selection, :]
+                masked_part = x[selection, :].unflatten(0, (n, selection_length))
+                x = masked_part
+                raw_pos_map = pos_map
+                pos_map = pos_map[selection, :].unflatten(0, (n, selection_length))
+                # print(
+                #     f"Full length: {full_length}, selection length: {selection_length}, ",
+                #     f"selected part (go to backbone): {masked_part.shape}, not selected part: {not_masked_part.shape}",
+                # )
+        backbone_out = self.backbone(
+            x,
+            ctx=ctx,
+            pos_map=pos_map,
+            y=t_emb,
+            shared_adaln=shared_adaln_state,
+        )
+        if self.use_tread:
+            if self.training or tread_rate is not None:
+                out = torch.empty(
+                    n, full_length, x.size(2), device=x.device, dtype=torch.float32
+                )
+                out[~selection, :] = not_masked_part.float()
+                out[selection, :] = backbone_out.flatten(0, 1).float()
+                pos_map = raw_pos_map
+            else:
+                out = backbone_out
+            out = self.post_tread_trns(
+                out.to(backbone_out),
+                ctx=ctx,
+                pos_map=pos_map,
+                y=t_emb,
+                shared_adaln=shared_adaln_state,
+            )
+        else:
+            out = backbone_out
+        out = out[:, :length]
+        return out
+
+    def setup_forward(
         self,
         x,
         t,
         ctx=None,
-        pos_map=None,
         r=None,
         addon_info=None,
-        tread_rate=None,
-        return_enc_out=False,
     ):
-        n, c, h, w = x.size()
-        t = t.reshape(n, -1)
-        x, pos_map = self.in_patch(x, pos_map)
-        x = x.contiguous()
-        if pos_map is None:
-            pos_map = (
-                make_axial_pos(
-                    h // self.patch_size,
-                    w // self.patch_size,
-                    dtype=x.dtype,
-                    device=x.device,
-                )
-                .unsqueeze(0)
-                .expand(n, -1, -1)
-            )
+        n = x.size(1)
         t_emb = self.time_emb(t)
         if r is not None:
             t_emb = t_emb + self.r_emb((t - r.reshape(n, -1)))
@@ -464,6 +555,14 @@ class XUDiT(nn.Module):
         else:
             shared_adaln_state = None
 
+        return t_emb, ctx, shared_adaln_state
+
+    def no_patch_forward(
+        self, x, t, ctx, pos_map, r, addon_info, tread_rate, *args, **kwargs
+    ):
+        n = x.size(0)
+        t_emb, ctx, shared_adaln_state = self.setup_forward(x, t, ctx, r, addon_info)
+
         length = x.size(1)
         if self.ctx_proj is not None:
             ctx = self.ctx_proj(ctx)
@@ -478,77 +577,58 @@ class XUDiT(nn.Module):
                 )
             ctx = None
 
-        if self.use_tread:
-            x = self.prev_tread_trns(
-                x,
-                ctx=ctx,
-                pos_map=pos_map,
-                y=t_emb,
-                shared_adaln=shared_adaln_state,
-            )
-            if self.training or tread_rate is not None:
-                xt_selection_length = selection_length = length - int(
-                    length * (tread_rate or self.dropout_ratio)
-                )
-                selection = torch.stack(
-                    [
-                        torch.randperm(length, device=x.device) < selection_length
-                        for _ in range(n)
-                    ]
-                )
-                if self.ctx_proj is not None:
-                    ctx_length = x.size(1) - length
-                    selection = torch.concat(
-                        [
-                            selection,
-                            torch.ones(
-                                n, ctx_length, device=x.device, dtype=torch.bool
-                            ),
-                        ],
-                        dim=1,
-                    )
-                    selection_length += ctx_length
-                full_length = x.size(1)
-                not_masked_part = x[~selection, :]
-                masked_part = x[selection, :].unflatten(0, (n, selection_length))
-                x = masked_part
-                raw_pos_map = pos_map
-                pos_map = pos_map[selection, :].unflatten(0, (n, selection_length))
-        backbone_out = self.backbone(
+        out = self.backbone_forward(
             x,
-            ctx=ctx,
-            pos_map=pos_map,
-            y=t_emb,
-            shared_adaln=shared_adaln_state,
-            return_enc_out=return_enc_out,
+            t_emb,
+            length,
+            shared_adaln_state,
+            ctx,
+            pos_map,
+            tread_rate,
         )
-        if return_enc_out:
-            backbone_out, enc_out = backbone_out
-        if self.use_tread:
-            if self.training or tread_rate is not None:
-                out = torch.empty(
-                    n, full_length, x.size(2), device=x.device, dtype=x.dtype
-                )
-                out[~selection, :] = not_masked_part
-                out[selection, :] = backbone_out.flatten(0, 1)
-                pos_map = raw_pos_map
-            else:
-                out = backbone_out
-            out = self.post_tread_trns(
-                out,
-                ctx=ctx,
-                pos_map=pos_map,
-                y=t_emb,
-                shared_adaln=shared_adaln_state,
-            )
-        else:
-            out = backbone_out
-        out = out[:, :length]
-        out = self.out_patch(out, h, w)
+        return out
 
-        if return_enc_out:
-            length = (
-                xt_selection_length if self.use_tread and self.training else full_length
+    def forward(
+        self,
+        x,
+        t,
+        ctx=None,
+        pos_map=None,
+        r=None,
+        addon_info=None,
+        tread_rate=None,
+    ):
+        n, c, h, w = x.size()
+        t = t.reshape(n, -1)
+        if self.use_pixel_mode:
+            x, pos_map = self.pixel_patch(x, pos_map)
+        else:
+            x, pos_map = self.in_patch(x, pos_map)
+        x = x.contiguous()
+        if pos_map is None:
+            pos_map = (
+                make_axial_pos(
+                    h // self.patch_size,
+                    w // self.patch_size,
+                    dtype=x.dtype,
+                    device=x.device,
+                )
+                .unsqueeze(0)
+                .expand(n, -1, -1)
             )
-            return out, enc_out[:, :length]
+        out = self.no_patch_forward(
+            x,
+            t,
+            ctx,
+            pos_map,
+            r,
+            addon_info,
+            tread_rate,
+            h // self.patch_size,
+            w // self.patch_size,
+        )
+        if self.use_pixel_mode:
+            out = self.pixel_unpatch(out, h, w)
+        else:
+            out = self.out_patch(out, h, w)
         return out
